@@ -4,6 +4,10 @@
 # https://gist.github.com/kadamski/92653913a53baf9dd1a8
 from __future__ import print_function
 import serial, struct, sys, time, json, subprocess
+import board
+import adafruit_dht
+
+dhtDevice = adafruit_dht.DHT22(board.D18)
 
 DEBUG = 0
 CMD_MODE = 2
@@ -107,6 +111,24 @@ def pub_mqtt(jsonrow):
     with subprocess.Popen(cmd, shell=False, bufsize=0, stdin=subprocess.PIPE).stdin as f:
         json.dump(jsonrow, f)
 
+def get_dht():
+    try:
+        temp = []
+        temperature_c = dhtDevice.temperature
+        temperature_f = temperature_c * (9 / 5) + 32
+        humidity = dhtDevice.humidity
+        temp = [temperature_c, temperature_f, humidity]
+        return temp
+
+    except RuntimeError as error:
+        # Errors happen fairly often, DHT's are hard to read, just keep going
+        print(error.args[0])
+        time.sleep(2.0)
+    except Exception as error:
+        dhtDevice.exit()
+        raise error
+        
+    
 
 if __name__ == "__main__":
     cmd_set_sleep(0)
@@ -116,9 +138,11 @@ if __name__ == "__main__":
     while True:
         cmd_set_sleep(0)
         for t in range(15):
+            dht = get_dht
             values = cmd_query_data();
             if values is not None and len(values) == 2:
-              print("PM2.5: ", values[0], ", PM10: ", values[1])
+              print("PM2.5: ", values[0], ", PM10: ", values[1], "Temp:", "{:.1f}",   "Humidity%", "{:.0f}" ).format(dht[2], dht[3])
+                    
               time.sleep(2)
 
         # open stored data
@@ -126,14 +150,14 @@ if __name__ == "__main__":
             with open(JSON_FILE) as json_data:
                 data = json.load(json_data)
         except IOError as e:
-            data = []
+            data = []      
 
         # check if length is more than 100 and delete first element
         if len(data) > 100:
             data.pop(0)
 
         # append new values
-        jsonrow = {'pm25': values[0], 'pm10': values[1], 'time': time.strftime("%d.%m.%Y %H:%M:%S")}
+        jsonrow = {'pm25': values[0], 'pm10': values[1], "Temp:" : "{:.1f}",   "Humidity%" : "{:.0f}", 'time': time.strftime("%d.%m.%Y %H:%M:%S").format(dht[2], dht[3])}
         data.append(jsonrow)
 
         # save it
